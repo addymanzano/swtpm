@@ -251,81 +251,90 @@ static int TPM_ContinueSelfTest(int *tpm_errcode)
 	return talk(&tcs.hdr, sizeof(tcs), tpm_errcode, TPM_DURATION_LONG);
 }
 
-static void versioninfo(void)
+static int TPM2_Startup(unsigned short startup_type, int *tpm_errcode)
 {
-	printf(
-"TPM emulator BIOS emulator version %d.%d.%d, Copyright (c) 2015 IBM Corp.\n"
-,SWTPM_VER_MAJOR, SWTPM_VER_MINOR, SWTPM_VER_MICRO);
+	struct tpm2_startup ts = {
+		.hdr = {
+			.tag = htobe16(TPM2_ST_NO_SESSIONS),
+			.length = htobe32(sizeof(ts)),
+			.ordinal = htobe32(TPM2_CC_Startup),
+		},
+		.startup_type = htobe16(startup_type),
+	};
+
+	return talk(&ts.hdr, sizeof(ts), tpm_errcode,
+		    TPM_DURATION_SHORT);
 }
 
-static void print_usage(const char *prgname)
+static int TPM2_IncrementalSelfTest(int *tpm_errcode)
 {
-	versioninfo();
-	printf(
-"\n"
-"%s [options]\n"
-"\n"
-"Runs TPM_Startup (unless -n), then (unless -o) sets PP, enable, activate \n"
-"and finally (using -u) gives up physical presence (PP)\n"
-"\n"
-"The following options are supported:\n"
-"\t-c  startup clear (default)\n"
-"\t-s  startup state\n"
-"\t-d  startup deactivate\n"
-"\t-n  no startup\n"
-"\t-o  startup only\n"
-"\t-cs run TPM_ContinueSelfTest\n"
-"\t-u  give up physical presence\n"
-"\t-v  display version and exit\n"
-"\t-h  display this help screen and exit\n"
-, prgname);
+	struct tpm2_incremental_selftest ts = {
+		.hdr = {
+			.tag = htobe16(TPM2_ST_NO_SESSIONS),
+			.length = htobe32(sizeof(ts)),
+			.ordinal = htobe32(TPM2_CC_IncrementalSelfTest),
+		},
+		.to_test = {
+			.num_entries = htobe32(1),
+			.algids = {
+				htobe16(TPM2_ALG_SHA1),
+			},
+		},
+	};
+
+	return talk(&ts.hdr, sizeof(ts), tpm_errcode,
+		    TPM_DURATION_SHORT);
 }
 
-int main(int argc, char *argv[])
+static int TPM2_HierarchyChangeAuth(int *tpm_errcode)
 {
-	int   ret = 0;
-	int   i;			/* argc iterator */
-	int   do_more = 1;
-	int   contselftest = 0;
-	unsigned char  startupparm = TPM_ST_CLEAR;      /* parameter for TPM_Startup(); */
-	int   tpm_errcode = 0;
-	int   unassert_pp = 0;
-	int   tpm_error = 0;
-	unsigned short physical_presence;
+	struct tpm2_hierarchy_change_auth thca = {
+		.hdr = {
+			.tag = htobe16(TPM2_ST_SESSIONS),
+			.length = htobe32(sizeof(thca)),
+			.ordinal = htobe32(TPM2_CC_HierarchyChangeAuth),
+		},
+		.authhandle = htobe32(TPM2_RH_PLATFORM),
+		.authblock_size = htobe32(sizeof(thca.authblock)),
+		.authblock = {
+			.handle = htobe32(TPM2_RS_PW),
+			.nonce_size = htobe16(0),
+			.cont = 1,
+			.password_size = htobe16(0),
+		},
+		.newauth = {
+			.size = htobe16(sizeof(thca.newauth.buffer)),
+		},
+	};
 
-	/* command line argument defaults */
-
-	for (i = 1 ; i < argc; i++) {
-		if (strcmp(argv[i],"-c") == 0) {
-			startupparm = TPM_ST_CLEAR;
-			do_more = 1;
-		} else if (strcmp(argv[i],"-d") == 0) {
-			do_more = 0;
-			startupparm = TPM_ST_DEACTIVATED;
-		} else if (strcmp(argv[i],"-h") == 0) {
-			print_usage(argv[0]);
-			exit(EXIT_SUCCESS);
-		} else if (strcmp(argv[i],"-v") == 0) {
-			versioninfo();
-			exit(EXIT_SUCCESS);
-		} else if (strcmp(argv[i],"-n") == 0) {
-			startupparm = 0xff;
-			do_more = 1;
-		} else if (strcmp(argv[i],"-s") == 0) {
-			startupparm = TPM_ST_STATE;
-			do_more = 1;
-		} else if (strcmp(argv[i],"-o") == 0) {
-			do_more = 0;
-		} else if (strcmp(argv[i],"-cs") == 0) {
-			contselftest = 1;
-		} else if (strcmp(argv[i],"-u") == 0) {
-			unassert_pp = 1;
-		} else {
-			printf("\n%s is not a valid option\n", argv[i]);
-			print_usage(argv[0]);
-			exit(EXIT_FAILURE);
+	int fd = open("/dev/urandom", O_RDONLY);
+	if (fd >= 0) {
+		ssize_t n = read(fd, &thca.newauth.buffer,
+				sizeof(thca.newauth.buffer));
+		close(fd);
+		if (n != sizeof(thca.newauth.buffer)) {
+				printf("Read of bytes from /dev/urandom failed");
+			if (n < 0)
+				printf(": %s", strerror(errno));
+			printf("\n");
+			return -1;
 		}
+	} else {
+		printf("Could not open /dev/urandom: %s\n", strerror(errno));
+		return -1;
 	}
+
+	return talk(&thca.hdr, sizeof(thca), tpm_errcode,
+		    TPM_DURATION_SHORT);
+}
+
+static int tpm12_bios(int do_more, int contselftest, unsigned char startupparm,
+		      int unassert_pp)
+{
+	int ret = 0;
+	int tpm_errcode;
+	int tpm_error = 0;
+	unsigned short physical_presence;
 
 	if (ret == 0) {
 		if (0xff != startupparm) {
@@ -355,7 +364,7 @@ int main(int argc, char *argv[])
 		ret = TSC_PhysicalPresence(physical_presence, &tpm_errcode);
 		if (tpm_errcode != 0) {
 			tpm_error = 1;
-			printf("TSC_PhysicalPresence(PRESENT) returned error code "
+			printf("TSC_PhysicalPresence returned error code "
 			       "0x%08x\n", tpm_errcode);
 		}
 	}
@@ -416,3 +425,138 @@ int main(int argc, char *argv[])
 	return ret;
 }
 
+static int tpm2_bios(int do_more, int contselftest, unsigned char startupparm,
+		     int set_password)
+{
+	int ret = 0;
+	int tpm_errcode;
+	int tpm_error = 0;
+
+	if (ret == 0) {
+		if (0xff != startupparm) {
+			ret = TPM2_Startup(startupparm, &tpm_errcode);
+			if (tpm_errcode != 0) {
+				tpm_error = 1;
+				printf("TPM2_Startup returned error code "
+				       "0x%08x\n", tpm_errcode);
+			}
+		}
+	}
+
+	if ((ret == 0) && contselftest) {
+		ret = TPM2_IncrementalSelfTest(&tpm_errcode);
+		if (tpm_errcode != 0) {
+			tpm_error = 1;
+			printf("TPM2_ImcrementalSelfTest returned error "
+			       "code 0x%08x\n", tpm_errcode);
+		}
+	}
+
+	if ((ret == 0) && set_password) {
+		ret = TPM2_HierarchyChangeAuth(&tpm_errcode);
+		if (tpm_errcode != 0) {
+			tpm_error = 1;
+			printf("TPM2_HierarchyChangeAuth returned error "
+			       "code 0x%08x\n", tpm_errcode);
+		}
+	}
+
+	if (!ret && tpm_error)
+		ret = 0x80;
+
+	return ret;
+}
+
+static void versioninfo(void)
+{
+	printf(
+"TPM emulator BIOS emulator version %d.%d.%d, Copyright (c) 2015 IBM Corp.\n"
+,SWTPM_VER_MAJOR, SWTPM_VER_MINOR, SWTPM_VER_MICRO);
+}
+
+static void print_usage(const char *prgname)
+{
+	versioninfo();
+	printf(
+"\n"
+"%s [options]\n"
+"\n"
+"Runs TPM_Startup (unless -n), then (unless -o) sets PP, enable, activate \n"
+"and finally (using -u) gives up physical presence (PP)\n"
+"\n"
+"The following options are supported:\n"
+"\t--tpm2  initialize a TPM2\n"
+"\t-c      startup clear (default)\n"
+"\t-s      startup state\n"
+"\t-d      startup deactivate (no effect on TPM2)\n"
+"\t-n      no startup\n"
+"\t-o      startup only\n"
+"\t-cs     run TPM_ContinueSelfTest / TPM2_IncrementalSelfTest\n"
+"\t-u      give up physical presence\n"
+"\t	on TPM 2 set the platform hierachy to a random password\n"
+"\t-v      display version and exit\n"
+"\t-h      display this help screen and exit\n"
+, prgname);
+}
+
+int main(int argc, char *argv[])
+{
+	int   ret = 0;
+	int   i;			/* argc iterator */
+	int   do_more = 1;
+	int   contselftest = 0;
+	unsigned char  startupparm = 0x1;      /* parameter for TPM_Startup(); */
+	unsigned char  startupparm_tpm2 = 0x00;
+	int   unassert_pp = 0;
+	int   tpm2 = 0;
+
+	/* command line argument defaults */
+
+	for (i = 1 ; i < argc; i++) {
+		if (strcmp(argv[i],"-c") == 0) {
+			startupparm = 0x01;
+			startupparm_tpm2 = 0x00;
+			do_more = 1;
+		} else if (strcmp(argv[i],"-d") == 0) {
+			do_more = 0;
+			startupparm = 0x03;
+			startupparm_tpm2 = 0xff;
+		} else if (strcmp(argv[i],"-h") == 0) {
+			print_usage(argv[0]);
+			exit(EXIT_SUCCESS);
+		} else if (strcmp(argv[i],"-v") == 0) {
+			versioninfo();
+			exit(EXIT_SUCCESS);
+		} else if (strcmp(argv[i],"-n") == 0) {
+			startupparm = 0xff;
+			startupparm_tpm2 = 0xff;
+			do_more = 1;
+		} else if (strcmp(argv[i],"-s") == 0) {
+			startupparm = 0x2;
+			startupparm_tpm2 = 0x01;
+			do_more = 1;
+		} else if (strcmp(argv[i],"-o") == 0) {
+			do_more = 0;
+		} else if (strcmp(argv[i],"-cs") == 0) {
+			contselftest = 1;
+		} else if (strcmp(argv[i],"-u") == 0) {
+			unassert_pp = 1;
+		} else if (strcmp(argv[i],"--tpm2") == 0) {
+			tpm2 = 1;
+		} else {
+			printf("\n%s is not a valid option\n", argv[i]);
+			print_usage(argv[0]);
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	if (tpm2) {
+		ret = tpm2_bios(do_more, contselftest, startupparm_tpm2,
+				unassert_pp);
+	} else {
+		ret = tpm12_bios(do_more, contselftest, startupparm,
+				 unassert_pp);
+	}
+
+	return ret;
+}
