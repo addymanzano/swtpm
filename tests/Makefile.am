@@ -21,12 +21,24 @@ TESTS = \
 	test_save_load_state_2 \
 	test_migration_key \
 	test_migration_key_2 \
+	test_tpm_probe \
 	\
 	test_commandline \
 	test_ctrlchannel \
 	test_parameters \
 	test_resume_volatile \
-	test_swtpm_bios
+	test_swtpm_bios \
+	\
+	test_tpm2_init \
+	test_tpm2_getcap \
+	test_tpm2_locality \
+	test_tpm2_hashing \
+	test_tpm2_hashing2 \
+	test_tpm2_hashing3 \
+	test_tpm2_savestate \
+	test_tpm2_wrongorder \
+	test_tpm2_probe
+
 
 if WITH_GNUTLS
 TESTS += \
