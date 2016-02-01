@@ -39,7 +39,8 @@ TESTS = \
 	test_tpm2_wrongorder \
 	test_tpm2_probe \
 	\
-	test_tpm2_swtpm_bios
+	test_tpm2_swtpm_bios \
+	test_tpm2_parameters
 
 
 if WITH_GNUTLS
@@ -47,7 +48,8 @@ TESTS += \
 	test_swtpm_cert \
 	test_swtpm_setup_create_cert \
 	\
-	test_tpm2_swtpm_cert
+	test_tpm2_swtpm_cert \
+	test_tpm2_swtpm_setup_create_cert
 endif
 	
 EXTRA_DIST=$(TESTS) \
