@@ -42,7 +42,8 @@
 
 #include <libtpms/tpm_library.h>
 
-TPM_RESULT tpmlib_start(struct libtpms_callbacks *cbs, uint32_t flags);
+TPM_RESULT tpmlib_start(struct libtpms_callbacks *cbs, uint32_t flags,
+                        TPMLIB_TPMVersion tpmversion);
 int tpmlib_get_tpm_property(enum TPMLIB_TPMProperty prop);
 
 #endif /* _SWTPM_TPMLIB_H_ */

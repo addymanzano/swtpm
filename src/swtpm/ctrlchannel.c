@@ -79,7 +79,8 @@ int ctrlchannel_get_fd(struct ctrlchannel *cc)
 
 int ctrlchannel_process_fd(int fd,
                            struct libtpms_callbacks *cbs,
-                           bool *terminate)
+                           bool *terminate,
+                           TPMLIB_TPMVersion tpmversion)
 {
     struct input {
         uint32_t cmd;
@@ -130,7 +131,8 @@ int ctrlchannel_process_fd(int fd,
 
             TPMLIB_Terminate();
 
-            res = tpmlib_start(cbs, be32toh(init_p->u.req.init_flags));
+            res = tpmlib_start(cbs, be32toh(init_p->u.req.init_flags),
+                               tpmversion);
             if (res) {
                 logprintf(STDERR_FILENO,
                           "Error: Could not initialize the TPM\n");

@@ -47,6 +47,7 @@ struct ctrlchannel *ctrlchannel_new(int fd);
 int ctrlchannel_get_fd(struct ctrlchannel *cc);
 int ctrlchannel_process_fd(int fd,
                            struct libtpms_callbacks *cbs,
-                           bool *terminate);
+                           bool *terminate,
+                           TPMLIB_TPMVersion tpmversion);
 
 #endif /* _SWTPM_CTRLCHANNEL_H_ */
