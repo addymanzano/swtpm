@@ -49,6 +49,7 @@ TESTS += \
 	test_swtpm_setup_create_cert \
 	\
 	test_tpm2_swtpm_cert \
+	test_tpm2_swtpm_cert_ecc \
 	test_tpm2_swtpm_setup_create_cert
 endif
 	
